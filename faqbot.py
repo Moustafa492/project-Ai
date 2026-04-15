@@ -118,11 +118,23 @@ class FAQBot:
         return []
 
 # ================= AI =================
-    def _ask_ai(self, prompt):
+    def _ask_ai(self, question,student_id=None):
         try:
+            memory = self._get_memory(student_id) if student_id else ""
+            full_prompt = f"""
+You are a university assistant.
+
+Previous conversation:
+{memory}
+
+User question:
+{question}
+
+Answer clearly and helpfully.
+"""
             res = self.client.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": full_prompt}],
                 temperature=0.4
             )
 
@@ -131,6 +143,7 @@ class FAQBot:
         except Exception as e:
             print("AI Error:", str(e))
             return "AI service temporarily unavailable"
+        
 # =================== Detect Intent ================
     def _detect_intent(self, question):
        prompt = f"""
@@ -168,6 +181,20 @@ Question: {question}
        except Exception as e:
             print("Intent Error:", e)
             return "unknown"
+       
+# ================= HISTORY =================
+def _save_history(self, student_id, q, a):
+    if student_id not in self.history:
+        self.history[student_id] = []
+
+    self.history[student_id].append({
+        "q": q,
+        "a": a
+    })
+
+def _get_memory(self, student_id):
+    history = self.history.get(student_id, [])[-10:]  
+    return "\n".join([f"Q: {h['q']} A: {h['a']}" for h in history])
 
 # ================= FAQ =================
     def _faq(self, q, lang):
@@ -182,47 +209,52 @@ Question: {question}
 
 # ================= MAIN =================
     def answer(self, question, student_id=None):
-
         try:
-            intent=self._detect_intent(question)
-            intent=intent.replace(" ","_")
-            print("Detected Intent:",intent)
+            intent = self._detect_intent(question)
+            intent = intent.replace(" ", "_")
+            print("Detected Intent:", intent)
 
-            # ================= GPA =================
-            if intent=="gpa":
+            answer = None  # 🔥 لازم جوه try
+
+        # ================= GPA =================
+            if intent == "gpa":
                 gpa = self._get_gpa()
-                return {"answer": f"Your GPA is: {gpa}" if gpa else "No GPA found"}
+                answer = f"Your GPA is: {gpa}" if gpa else "No GPA found"
 
-            # ================= CURRENT COURSES =================
-            elif intent=="current_courses":
+        # ================= CURRENT COURSES =================
+            elif intent == "current_courses":
                 data = self._get_current_courses()
                 if not data:
-                    return {"answer": "No current courses found"}
+                    answer = "No current courses found"
+                else:
+                    courses = [c.get("courseName", "Unknown") for c in data]
+                    answer = "Your current courses:\n" + "\n".join(courses)
 
-                courses = [c.get("courseName", "Unknown") for c in data]
-                return {"answer": "Your current courses:\n" + "\n".join(courses)}
-
-            # ================= PREVIOUS COURSES =================
-            elif intent=="previous_courses":
+        # ================= PREVIOUS COURSES =================
+            elif intent == "previous_courses":
                 data = self._get_previous_courses()
                 if not data:
-                    return {"answer": "No previous courses found"}
+                    answer = "No previous courses found"
+                else:
+                    courses = [c.get("courseName", "Unknown") for c in data]
+                    answer = "Your completed courses:\n" + "\n".join(courses)
 
-                courses = [c.get("courseName", "Unknown") for c in data]
-                return {"answer": "Your completed courses:\n" + "\n".join(courses)}
-            
-            #================== Study Plan ========================
-            elif intent=="study_plan":
-                gpa=self._get_gpa()
-                return{"answer":self._ask_ai(f"My GPA is {gpa}.Give me a study plan.")}
+        # ================= Study Plan =================
+            elif intent == "study_plan":
+                gpa = self._get_gpa()
+                answer = self._ask_ai(f"My GPA is {gpa}. Give me a study plan.", student_id)
 
-            # ================= FAQ =================
-            faq, score = self._faq(question, self._detect_lang(question))
-            if score > self.threshold:
-                return {"answer": faq}
+        # ================= FAQ + AI =================
+            else:
+                faq, score = self._faq(question, self._detect_lang(question))
+                if score > self.threshold:
+                    answer = faq
+                else:
+                    answer = self._ask_ai(question, student_id)
 
-            # ================= AI =================
-            answer = self._ask_ai(question)
+            # 🔥 حفظ الهستوري
+            self._save_history(student_id, question, answer)
+
             return {"answer": answer}
 
         except Exception as e:
