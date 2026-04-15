@@ -183,18 +183,18 @@ Question: {question}
             return "unknown"
        
 # ================= HISTORY =================
-def _save_history(self, student_id, q, a):
-    if student_id not in self.history:
-        self.history[student_id] = []
+    def _save_history(self, student_id, q, a):
+        if student_id not in self.history:
+            self.history[student_id] = []
 
-    self.history[student_id].append({
-        "q": q,
-        "a": a
-    })
+        self.history[student_id].append({
+            "q": q,
+            "a": a
+        })
 
-def _get_memory(self, student_id):
-    history = self.history.get(student_id, [])[-10:]  
-    return "\n".join([f"Q: {h['q']} A: {h['a']}" for h in history])
+    def _get_memory(self, student_id):
+        history = self.history.get(student_id, [])[-10:]  
+        return "\n".join([f"Q: {h['q']} A: {h['a']}" for h in history])
 
 # ================= FAQ =================
     def _faq(self, q, lang):
