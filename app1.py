@@ -16,13 +16,20 @@ def chat():
     try:
         data = request.get_json()
 
-        # ✅ validation
         if not data:
             return jsonify({"error": "Invalid JSON"}), 400
 
         question = data.get("question")
         student_id = data.get("student_id")
-        token = data.get("token")
+
+        # ✅ ناخد التوكن من ال Header
+        auth_header = request.headers.get("Authorization")
+
+        if not auth_header:
+            return jsonify({"error": "Authorization header missing"}), 401
+
+        # Bearer token
+        token = auth_header.replace("Bearer ", "")
 
         if not question:
             return jsonify({"error": "Question required"}), 400
@@ -30,32 +37,15 @@ def chat():
         if not student_id:
             return jsonify({"error": "student_id required"}), 400
 
-        if not token:
-            return jsonify({"error": "token required"}), 400
-
-        # ✅ set token
         bot.token = token
 
-        # 🔥 Debug مهم
-        print("QUESTION:", question)
-        print("STUDENT ID:", student_id)
-
-        # ✅ get answer
         result = bot.answer(question, student_id=student_id)
 
-        # 🔥 ضمان شكل response ثابت
-        return jsonify({
-            "success": True,
-            "data": result
-        })
+        return jsonify(result)
 
     except Exception as e:
-
-      return jsonify({
-        "error": str(e),
-        "type": str(type(e)),
-        "success": False
-    }), 500
+        print("ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
 
 
 # =====================================
