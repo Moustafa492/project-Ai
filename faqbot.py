@@ -1,0 +1,230 @@
+import numpy as np
+import pandas as pd
+import requests
+import os
+
+from langdetect import detect
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from openai import OpenAI
+
+
+class FAQBot:
+    def __init__(self, excel_path: str, threshold: float = 0.35):
+
+        self.excel_path = excel_path
+        self.threshold = threshold  
+
+        self.questions_en = []
+        self.answers_en = []
+        self.questions_ar = []
+        self.answers_ar = []
+
+        self.vectorizer_en = None
+        self.matrix_en = None
+        self.vectorizer_ar = None
+        self.matrix_ar = None
+
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        self.cache = {}
+        self.history = {}
+
+        self.backend_url = "https://graduationproject48.runasp.net/api"
+        self.token = None
+
+        self._load_data()
+        self._build_models()
+
+# ================= REQUEST =================
+    def _safe_get(self, url):
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.token}"
+            }
+
+            r = requests.get(url, headers=headers)
+
+            print("URL:", url)
+            print("Status:", r.status_code)
+            print("Response:", r.text)
+
+            if r.status_code == 200:
+                return r.json()
+
+            return None
+
+        except Exception as e:
+            print("ERROR:", e)
+            return None
+
+# ================= DATA =================
+    def _load_data(self):
+        ext = os.path.splitext(self.excel_path)[1].lower()
+
+        if ext == ".csv":
+            df = pd.read_csv(self.excel_path)
+        else:
+            df = pd.read_excel(self.excel_path)
+
+        self.questions_en = df["question"].dropna().tolist()
+        self.answers_en = df["answer"].dropna().tolist()
+
+        self.questions_ar = df["question_ar"].dropna().tolist()
+        self.answers_ar = df["answer_ar"].dropna().tolist()
+
+# ================= MODELS =================
+    def _build_models(self):
+        self.vectorizer_en = TfidfVectorizer()
+        self.matrix_en = self.vectorizer_en.fit_transform(self.questions_en)
+
+        self.vectorizer_ar = TfidfVectorizer()
+        self.matrix_ar = self.vectorizer_ar.fit_transform(self.questions_ar)
+
+# ================= LANG =================
+    def _detect_lang(self, text):
+        try:
+            return "ar" if detect(text) == "ar" else "en"
+        except:
+            return "en"
+
+# ================= BACKEND =================
+
+    def _get_gpa(self):
+        url = f"{self.backend_url}/Student/gpa"
+        data = self._safe_get(url)
+
+        if data and "data" in data:
+            return data["data"].get("gpa")
+
+        return None
+
+    def _get_current_courses(self):
+        url = f"{self.backend_url}/Enrollment/current-courses"
+        data = self._safe_get(url)
+
+        if data and "data" in data:
+            return data["data"]
+
+        return []
+
+    def _get_previous_courses(self):
+        url = f"{self.backend_url}/Enrollment/previous-courses"
+        data = self._safe_get(url)
+
+        if data and "data" in data:
+            return data["data"]
+
+        return []
+
+# ================= AI =================
+    def _ask_ai(self, prompt):
+        try:
+            res = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4
+            )
+
+            return res.choices[0].message.content.strip()
+
+        except Exception as e:
+            print("AI Error:", str(e))
+            return "AI service temporarily unavailable"
+# =================== Detect Intent ================
+    def _detect_intent(self, question):
+       prompt = f"""
+Classify the user question into EXACTLY ONE of these intents:
+
+gpa
+current_courses
+previous_courses
+study_plan
+faq
+unknown
+
+IMPORTANT:
+- Return ONLY one word
+- Use exactly the same spelling
+
+Examples:
+Q: what is my gpa → gpa
+Q: what subjects am I taking → current_courses
+Q: what did I finish → previous_courses
+
+Question: {question}
+"""
+
+       try:
+            res = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
+
+            intent = res.choices[0].message.content.strip().lower()
+            return intent
+       
+       except Exception as e:
+            print("Intent Error:", e)
+            return "unknown"
+
+# ================= FAQ =================
+    def _faq(self, q, lang):
+        vec = self.vectorizer_ar if lang == "ar" else self.vectorizer_en
+        mat = self.matrix_ar if lang == "ar" else self.matrix_en
+        answers = self.answers_ar if lang == "ar" else self.answers_en
+
+        sims = cosine_similarity(vec.transform([q]), mat)[0]
+        idx = np.argmax(sims)
+
+        return answers[idx], sims[idx]
+
+# ================= MAIN =================
+    def answer(self, question, student_id=None):
+
+        try:
+            intent=self._detect_intent(question)
+            intent=intent.replace(" ","_")
+            print("Detected Intent:",intent)
+
+            # ================= GPA =================
+            if intent=="gpa":
+                gpa = self._get_gpa()
+                return {"answer": f"Your GPA is: {gpa}" if gpa else "No GPA found"}
+
+            # ================= CURRENT COURSES =================
+            elif intent=="current_courses":
+                data = self._get_current_courses()
+                if not data:
+                    return {"answer": "No current courses found"}
+
+                courses = [c.get("courseName", "Unknown") for c in data]
+                return {"answer": "Your current courses:\n" + "\n".join(courses)}
+
+            # ================= PREVIOUS COURSES =================
+            elif intent=="previous_courses":
+                data = self._get_previous_courses()
+                if not data:
+                    return {"answer": "No previous courses found"}
+
+                courses = [c.get("courseName", "Unknown") for c in data]
+                return {"answer": "Your completed courses:\n" + "\n".join(courses)}
+            
+            #================== Study Plan ========================
+            elif intent=="study_plan":
+                gpa=self._get_gpa()
+                return{"answer":self._ask_ai(f"My GPA is {gpa}.Give me a study plan.")}
+
+            # ================= FAQ =================
+            faq, score = self._faq(question, self._detect_lang(question))
+            if score > self.threshold:
+                return {"answer": faq}
+
+            # ================= AI =================
+            answer = self._ask_ai(question)
+            return {"answer": answer}
+
+        except Exception as e:
+            print("MAIN ERROR:", str(e))
+            return {"answer": "Something went wrong"}
