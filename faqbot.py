@@ -247,7 +247,7 @@ Question: {question}
         # ================= FAQ + AI =================
             else:
                 faq, score = self._faq(question, self._detect_lang(question))
-                if score > self.threshold:
+                if score > 0.7:
                     answer = faq
                 else:
                     answer = self._ask_ai(question, student_id)
