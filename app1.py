@@ -21,9 +21,12 @@ def get_student_id_from_token(token):
     try:
         decoded = jwt.decode(token, options={"verify_signature": False})
 
-        student_id = decoded.get("student_id") or decoded.get("id") or decoded.get("sub")
-
-        print("Decoded Token:", decoded)
+        student_id = (
+            decoded.get("student_id")
+            or decoded.get("id")
+            or decoded.get("sub")
+            or decoded.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")
+        )
 
         return student_id
 
