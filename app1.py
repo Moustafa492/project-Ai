@@ -15,10 +15,21 @@ sessions = {}
 
 
 # =====================================
-# GET STUDENT ID FROM TOKEN
+# GET STUDENT ID FROM TOKEN 🔥
 # =====================================
 def get_student_id_from_token(token):
-    return 1
+    try:
+        decoded = jwt.decode(token, options={"verify_signature": False})
+
+        student_id = decoded.get("student_id") or decoded.get("id") or decoded.get("sub")
+
+        print("Decoded Token:", decoded)
+
+        return student_id
+
+    except Exception as e:
+        print("JWT ERROR:", str(e))
+        return None
 
 
 # =====================================
@@ -35,7 +46,7 @@ def create_session():
         bot.token = token
 
         student_id = get_student_id_from_token(token)
-        if not student_id:
+        if student_id is None:
             return jsonify({"error": "Invalid token"}), 401
 
         session_id = str(uuid.uuid4())
@@ -78,7 +89,7 @@ def chat():
         bot.token = token
 
         student_id = get_student_id_from_token(token)
-        if not student_id:
+        if student_id is None:
             return jsonify({"error": "Invalid token"}), 401
 
         if student_id not in sessions or session_id not in sessions[student_id]:
@@ -92,15 +103,15 @@ def chat():
             "a": result["answer"]
         })
 
-        # 🔥 AUTO CHAT TITLE
+        # 🔥 AUTO TITLE
         if sessions[student_id][session_id]["name"] == "New Chat":
-            ai_title=bot.generate_title(question)
+            ai_title = bot.generate_title(question)
             sessions[student_id][session_id]["name"] = ai_title[:30]
 
         # تحديث الوقت
         sessions[student_id][session_id]["updated_at"] = datetime.datetime.now()
 
-        # حفظ آخر رسالة
+        # آخر رسالة
         sessions[student_id][session_id]["last_message"] = question
 
         return jsonify(result)
@@ -124,12 +135,11 @@ def list_sessions():
         bot.token = token
 
         student_id = get_student_id_from_token(token)
-        if not student_id:
+        if student_id is None:
             return jsonify({"error": "Invalid token"}), 401
 
         user_sessions = sessions.get(student_id, {})
 
-        # ترتيب حسب آخر استخدام
         sorted_sessions = sorted(
             user_sessions.items(),
             key=lambda x: x[1].get("updated_at"),
@@ -165,7 +175,7 @@ def delete_session(session_id):
         bot.token = token
 
         student_id = get_student_id_from_token(token)
-        if not student_id:
+        if student_id is None:
             return jsonify({"error": "Invalid token"}), 401
 
         if student_id in sessions and session_id in sessions[student_id]:
@@ -195,7 +205,7 @@ def rename_session(session_id):
         bot.token = token
 
         student_id = get_student_id_from_token(token)
-        if not student_id:
+        if student_id is None:
             return jsonify({"error": "Invalid token"}), 401
 
         if student_id in sessions and session_id in sessions[student_id]:
