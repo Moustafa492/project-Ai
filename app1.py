@@ -8,13 +8,8 @@ from flask_cors import CORS
 
 app = Flask(__name__)
 
-# ✅ CORS FIX 🔥
-CORS(app, resources={
-    r"/*": {
-        "origins": ["http://localhost:5173"],
-        "allow_headers": ["Content-Type", "Authorization"]
-    }
-})
+# ✅ CORS مفتوح لأي frontend 🔥
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 bot = FAQBot("data.csv")
 
@@ -23,9 +18,8 @@ bot = FAQBot("data.csv")
 # =====================================
 sessions = {}
 
-
 # =====================================
-# GET STUDENT ID FROM TOKEN 🔥
+# GET STUDENT ID FROM TOKEN
 # =====================================
 def get_student_id_from_token(token):
     try:
@@ -43,7 +37,6 @@ def get_student_id_from_token(token):
     except Exception as e:
         print("JWT ERROR:", str(e))
         return None
-
 
 # =====================================
 # CREATE SESSION
@@ -79,7 +72,6 @@ def create_session():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 # =====================================
 # CHAT
 # =====================================
@@ -110,7 +102,6 @@ def chat():
 
         result = bot.answer(question, student_id)
 
-        # حفظ الرسالة
         sessions[student_id][session_id]["messages"].append({
             "q": question,
             "a": result["answer"]
@@ -121,10 +112,7 @@ def chat():
             ai_title = bot.generate_title(question)
             sessions[student_id][session_id]["name"] = ai_title[:30]
 
-        # تحديث الوقت
         sessions[student_id][session_id]["updated_at"] = datetime.datetime.now()
-
-        # آخر رسالة
         sessions[student_id][session_id]["last_message"] = question
 
         return jsonify(result)
@@ -132,7 +120,6 @@ def chat():
     except Exception as e:
         print("ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
-
 
 # =====================================
 # LIST SESSIONS
@@ -173,9 +160,39 @@ def list_sessions():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# =====================================
+# GET SESSION WITH MESSAGES 🔥
+# =====================================
+@app.route("/chat/session/<session_id>", methods=["GET"])
+def get_session(session_id):
+    try:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return jsonify({"error": "Authorization missing"}), 401
+
+        token = auth_header.replace("Bearer ", "")
+        bot.token = token
+
+        student_id = get_student_id_from_token(token)
+        if student_id is None:
+            return jsonify({"error": "Invalid token"}), 401
+
+        if student_id not in sessions or session_id not in sessions[student_id]:
+            return jsonify({"error": "Session not found"}), 404
+
+        session_data = sessions[student_id][session_id]
+
+        return jsonify({
+            "session_id": session_id,
+            "name": session_data["name"],
+            "messages": session_data["messages"]
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # =====================================
-# DELETE SESSION
+# DELETE ONE SESSION
 # =====================================
 @app.route("/chat/session/<session_id>", methods=["DELETE"])
 def delete_session(session_id):
@@ -193,13 +210,36 @@ def delete_session(session_id):
 
         if student_id in sessions and session_id in sessions[student_id]:
             del sessions[student_id][session_id]
-            return jsonify({"message": "Session deleted"})
+            return jsonify({"message": "Session deleted successfully"})
 
         return jsonify({"error": "Session not found"}), 404
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# =====================================
+# DELETE ALL SESSIONS 🔥
+# =====================================
+@app.route("/chat/sessions", methods=["DELETE"])
+def delete_all_sessions():
+    try:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return jsonify({"error": "Authorization missing"}), 401
+
+        token = auth_header.replace("Bearer ", "")
+        bot.token = token
+
+        student_id = get_student_id_from_token(token)
+        if student_id is None:
+            return jsonify({"error": "Invalid token"}), 401
+
+        sessions[student_id] = {}
+
+        return jsonify({"message": "All sessions deleted"})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # =====================================
 # RENAME SESSION
@@ -230,7 +270,6 @@ def rename_session(session_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 # =====================================
 # HEALTH
 # =====================================
@@ -240,7 +279,6 @@ def home():
         "status": "running",
         "message": "Guide Bot is working 🚀"
     })
-
 
 # =====================================
 # RUN
