@@ -144,6 +144,27 @@ Answer clearly and helpfully.
             print("AI Error:", str(e))
             return "AI service temporarily unavailable"
         
+# ================ Genrate Title ==================
+    def generate_title(self, question):
+        try:
+            prompt = f"""
+Generate a very short title (max 5 words) for this question:
+{question}
+
+Only return the title.
+"""
+
+            res = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3
+            )
+
+            return res.choices[0].message.content.strip()
+
+        except:
+            return question[:30]
+        
 # =================== Detect Intent ================
     def _detect_intent(self, question):
        prompt = f"""
