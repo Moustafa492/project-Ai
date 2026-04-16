@@ -18,13 +18,7 @@ sessions = {}
 # GET STUDENT ID FROM TOKEN
 # =====================================
 def get_student_id_from_token(token):
-    try:
-        decoded = jwt.decode(token, options={"verify_signature": False})
-        print("TOKEN DATA:", decoded)  # 🔥 مهم
-        return decoded.get("student_id")or decoded.get("id") or decoded.get("user_id")
-    except Exception as e:
-        print("❌ TOKEN ERROR:", str(e))
-        return None
+    return 1
 
 
 # =====================================
