@@ -118,13 +118,13 @@ class FAQBot:
         return []
 
 # ================= AI =================
-def _ask_ai(self, question, student_id=None):
-    try:
-        memory = self._get_memory(student_id) if student_id else ""
+    def _ask_ai(self, question, student_id=None):
+        try:
+            memory = self._get_memory(student_id) if student_id else ""
 
-        res = self.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
+            res = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
                 {
                     "role": "system",
                     "content": f"""
@@ -150,11 +150,11 @@ Previous conversation:
             temperature=0.4
         )
 
-        return res.choices[0].message.content.strip()
+            return res.choices[0].message.content.strip()
 
-    except Exception as e:
-        print("AI Error:", str(e))
-        return "Something went wrong"
+        except Exception as e:
+            print("AI Error:", str(e))
+            return "Something went wrong"
         
 # ================ Genrate Title ==================
     def generate_title(self, question):
