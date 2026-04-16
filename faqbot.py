@@ -118,31 +118,43 @@ class FAQBot:
         return []
 
 # ================= AI =================
-    def _ask_ai(self, question,student_id=None):
-        try:
-            memory = self._get_memory(student_id) if student_id else ""
-            full_prompt = f"""
+def _ask_ai(self, question, student_id=None):
+    try:
+        memory = self._get_memory(student_id) if student_id else ""
+
+        res = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"""
 You are a university assistant.
+
+Rules:
+- Answer in the SAME language as the user (Arabic or English).
+- Keep the answer SHORT and clear.
+- Do NOT use markdown.
+- Do NOT use symbols like # or *.
+- Answer like a normal chatbot.
+- If the user asks about GPA, courses, or study, be helpful and direct.
 
 Previous conversation:
 {memory}
-
-User question:
-{question}
-
-Answer clearly and helpfully.
 """
-            res = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": full_prompt}],
-                temperature=0.4
-            )
+                },
+                {
+                    "role": "user",
+                    "content": question
+                }
+            ],
+            temperature=0.4
+        )
 
-            return res.choices[0].message.content.strip()
+        return res.choices[0].message.content.strip()
 
-        except Exception as e:
-            print("AI Error:", str(e))
-            return "AI service temporarily unavailable"
+    except Exception as e:
+        print("AI Error:", str(e))
+        return "Something went wrong"
         
 # ================ Genrate Title ==================
     def generate_title(self, question):
