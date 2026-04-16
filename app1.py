@@ -4,8 +4,18 @@ import os
 import uuid
 import datetime
 import jwt
+from flask_cors import CORS
 
 app = Flask(__name__)
+
+# ✅ CORS FIX 🔥
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:5173"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
+
 bot = FAQBot("data.csv")
 
 # =====================================
