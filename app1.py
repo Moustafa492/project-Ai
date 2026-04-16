@@ -3,6 +3,7 @@ from faqbot import FAQBot
 import os
 import uuid
 import datetime
+import jwt
 
 app = Flask(__name__)
 bot = FAQBot("data.csv")
@@ -11,6 +12,18 @@ bot = FAQBot("data.csv")
 # STORAGE
 # =====================================
 sessions = {}
+
+
+# =====================================
+# GET STUDENT ID FROM TOKEN
+# =====================================
+def get_student_id_from_token(token):
+    try:
+        decoded = jwt.decode(token, options={"verify_signature": False})
+        return decoded.get("student_id")
+    except Exception as e:
+        print("TOKEN ERROR:", str(e))
+        return None
 
 
 # =====================================
@@ -26,7 +39,9 @@ def create_session():
         token = auth_header.replace("Bearer ", "")
         bot.token = token
 
-        student_id = 1  # 🔥 مؤقت
+        student_id = get_student_id_from_token(token)
+        if not student_id:
+            return jsonify({"error": "Invalid token"}), 401
 
         session_id = str(uuid.uuid4())
 
@@ -67,7 +82,9 @@ def chat():
         token = auth_header.replace("Bearer ", "")
         bot.token = token
 
-        student_id = 1  # 🔥 مؤقت
+        student_id = get_student_id_from_token(token)
+        if not student_id:
+            return jsonify({"error": "Invalid token"}), 401
 
         if student_id not in sessions or session_id not in sessions[student_id]:
             return jsonify({"error": "Invalid session"}), 400
@@ -94,16 +111,21 @@ def chat():
 
 
 # =====================================
-# LIST SESSIONS (SORTED)
+# LIST SESSIONS
 # =====================================
 @app.route("/chat/sessions", methods=["GET"])
 def list_sessions():
     try:
         auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return jsonify({"error": "Authorization missing"}), 401
+
         token = auth_header.replace("Bearer ", "")
         bot.token = token
 
-        student_id = 1  # 🔥 مؤقت
+        student_id = get_student_id_from_token(token)
+        if not student_id:
+            return jsonify({"error": "Invalid token"}), 401
 
         user_sessions = sessions.get(student_id, {})
 
@@ -136,10 +158,15 @@ def list_sessions():
 def delete_session(session_id):
     try:
         auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return jsonify({"error": "Authorization missing"}), 401
+
         token = auth_header.replace("Bearer ", "")
         bot.token = token
 
-        student_id = 1  # 🔥 مؤقت
+        student_id = get_student_id_from_token(token)
+        if not student_id:
+            return jsonify({"error": "Invalid token"}), 401
 
         if student_id in sessions and session_id in sessions[student_id]:
             del sessions[student_id][session_id]
@@ -161,10 +188,15 @@ def rename_session(session_id):
         new_name = data.get("name")
 
         auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return jsonify({"error": "Authorization missing"}), 401
+
         token = auth_header.replace("Bearer ", "")
         bot.token = token
 
-        student_id = 1  # 🔥 مؤقت
+        student_id = get_student_id_from_token(token)
+        if not student_id:
+            return jsonify({"error": "Invalid token"}), 401
 
         if student_id in sessions and session_id in sessions[student_id]:
             sessions[student_id][session_id]["name"] = new_name
