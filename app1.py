@@ -93,9 +93,9 @@ def chat():
         })
 
         # 🔥 AUTO CHAT TITLE
-        sessions[student_id][session_id]["name"] == "New Chat":
-        clean_title = question.strip().capitalize()
-        sessions[student_id][session_id]["name"] = clean_title[:30]
+        if sessions[student_id][session_id]["name"] == "New Chat":
+            clean_title = question.strip().capitalize()
+            sessions[student_id][session_id]["name"] = clean_title[:30]
 
         # تحديث الوقت
         sessions[student_id][session_id]["updated_at"] = datetime.datetime.now()
