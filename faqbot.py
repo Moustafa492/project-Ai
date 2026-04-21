@@ -87,6 +87,8 @@ class FAQBot:
     def _get_gpa(self):
         data = self._safe_get(f"{self.backend_url}/Student/gpa")
 
+        print("DEBUG GPA DATA:", data)  # 👈 مهم
+
         if not data:
             return None
 
@@ -95,16 +97,25 @@ class FAQBot:
             return data.get("data", {}).get("gpa")
 
         # لو list
-        if isinstance(data, list) and len(data) > 0:
-            return data[0].get("gpa")
+        if isinstance(data, list):
+            if len(data) > 0:
+                first = data[0]
+                if isinstance(first, dict):
+                    return first.get("gpa")
 
         return None
 
     def _get_current_courses(self):
         data = self._safe_get(f"{self.backend_url}/Enrollment/current-courses")
 
-        if data and isinstance(data.get("data"), list) and data["data"]:
-            return data["data"]
+        print("DEBUG CURRENT:", data)
+
+        if isinstance(data, dict):
+            if isinstance(data.get("data"), list) and data["data"]:
+                return data["data"]
+
+        if isinstance(data, list):
+            return data
 
         return [
             {"courseName": "Data Structures"},
@@ -114,10 +125,15 @@ class FAQBot:
     def _get_previous_courses(self):
         data = self._safe_get(f"{self.backend_url}/Enrollment/previous-courses")
 
-        if data and isinstance(data.get("data"), list) and data["data"]:
-            return data["data"]
+        print("DEBUG PREVIOUS:", data)
 
-        # 👇 fallback من الصورة
+        if isinstance(data, dict):
+            if isinstance(data.get("data"), list) and data["data"]:
+                return data["data"]
+
+        if isinstance(data, list):
+            return data
+
         return [
             {"courseName": "Intro to Computer Science"},
             {"courseName": "Computer Programming"}
