@@ -86,6 +86,10 @@ def chat():
         if not question:
             return jsonify({"error": "Question required"}), 400
 
+        # 🔥 FIX: session_id check
+        if not session_id:
+            return jsonify({"error": "session_id required"}), 400
+
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return jsonify({"error": "Authorization missing"}), 401
@@ -102,13 +106,20 @@ def chat():
 
         result = bot.answer(question, student_id)
 
+        # 🔥 logging مهم
+        print("QUESTION:", question)
+        print("ANSWER:", result)
+
         sessions[student_id][session_id]["messages"].append({
             "q": question,
-            "a": result["answer"]
+            "a": result.get("answer", "No response")
         })
 
-        # 🔥 AUTO TITLE
-        if sessions[student_id][session_id]["name"] == "New Chat":
+        # 🔥 FIX: title يتعمل مرة واحدة بس
+        if (
+            sessions[student_id][session_id]["name"] == "New Chat"
+            and len(sessions[student_id][session_id]["messages"]) == 1
+        ):
             ai_title = bot.generate_title(question)
             sessions[student_id][session_id]["name"] = ai_title[:30]
 

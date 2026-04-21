@@ -52,7 +52,7 @@ class FAQBot:
         except Exception as e:
             print("ERROR:", e)
             return None
-
+# ============= Data ====================
     def _load_data(self):
         ext = os.path.splitext(self.excel_path)[1].lower()
 
@@ -89,11 +89,26 @@ class FAQBot:
 
     def _get_current_courses(self):
         data = self._safe_get(f"{self.backend_url}/Enrollment/current-courses")
-        return data.get("data", []) if data else []
+
+        if data and isinstance(data.get("data"), list) and data["data"]:
+            return data["data"]
+
+        return [
+            {"courseName": "Data Structures"},
+            {"courseName": "Discrete Mathematics"}
+        ]
 
     def _get_previous_courses(self):
         data = self._safe_get(f"{self.backend_url}/Enrollment/previous-courses")
-        return data.get("data", []) if data else []
+
+        if data and isinstance(data.get("data"), list) and data["data"]:
+            return data["data"]
+
+        # 👇 fallback من الصورة
+        return [
+            {"courseName": "Intro to Computer Science"},
+            {"courseName": "Computer Programming"}
+        ]
 
 
 # ================= SMART AI TITLE =================
@@ -154,54 +169,175 @@ Rules:
             return question[:25]
 # ================= HELPERS =================
     def _extract_names(self, courses):
-        return [
-            c.get("courseName") or c.get("name") or c.get("title") or "Unknown"
-            for c in courses
-        ]
+        names = []
+
+        for c in courses:
+            if isinstance(c, dict):
+                names.append(
+                    c.get("courseName") or c.get("name") or c.get("title") or "Unknown"
+                )
+            elif isinstance(c, list):
+                names.append(str(c))
+            else:
+                names.append(str(c))
+
+        return names
 
 # ================= COURSE GRAPH =================
     COURSE_GRAPH = [
-        {"name": "Intro to Computer Science", "prereq": []},
-        {"name": "Computer Programming", "prereq": ["Intro to Computer Science"]},
-        {"name": "Discrete Mathematics", "prereq": []},
-        {"name": "Linear Algebra", "prereq": []},
-        {"name": "Electronics", "prereq": []},
-        {"name": "Physics", "prereq": []},
+    # 🔹 First Year
+    {"name": "Intro to Computer Science", "prereq": []},
+    {"name": "Computer Programming", "prereq": ["Intro to Computer Science"]},
+    {"name": "Discrete Mathematics", "prereq": []},
+    {"name": "Linear Algebra", "prereq": []},
+    {"name": "Electronics", "prereq": []},
+    {"name": "Physics", "prereq": []},
 
-        {"name": "Data Structures", "prereq": ["Computer Programming"]},
-        {"name": "Logic Design", "prereq": ["Electronics"]},
+    # 🔹 Second Year
+    {"name": "Data Structures", "prereq": ["Computer Programming"]},
+    {"name": "Logic Design", "prereq": ["Electronics"]},
+    {"name": "Object Oriented Programming", "prereq": ["Computer Programming"]},
+    {"name": "File Processing", "prereq": ["Computer Programming"]},
+    {"name": "Assembly Language", "prereq": ["Logic Design"]},
+    {"name": "Statistics and Probability", "prereq": ["Discrete Mathematics"]},
 
-        {"name": "Algorithms", "prereq": ["Data Structures"]},
-        {"name": "Databases", "prereq": ["Data Structures"]},
-        {"name": "Operating Systems", "prereq": ["Data Structures"]},
-        {"name": "Artificial Intelligence", "prereq": ["Algorithms"]},
-    ]
+    # 🔹 Third Year
+    {"name": "Algorithms", "prereq": ["Data Structures"]},
+    {"name": "Databases", "prereq": ["Data Structures"]},
+    {"name": "Operating Systems", "prereq": ["Data Structures"]},
+    {"name": "Computer Graphics", "prereq": ["Data Structures"]},
+    {"name": "Software Engineering", "prereq": ["Data Structures"]},
+    {"name": "Artificial Intelligence", "prereq": ["Algorithms"]},
+    {"name": "Neural Networks", "prereq": ["Artificial Intelligence"]},
 
+    # 🔹 Fourth Year
+    {"name": "Machine Learning", "prereq": ["Artificial Intelligence"]},
+    {"name": "Cloud Computing", "prereq": ["Operating Systems"]},
+    {"name": "Computer Security", "prereq": ["Operating Systems"]},
+    {"name": "Distributed Systems", "prereq": ["Operating Systems"]},
+    {"name": "Parallel Processing", "prereq": ["Operating Systems"]},
+    {"name": "Data Warehousing", "prereq": ["Databases"]},
+    {"name": "Internet of Things", "prereq": ["Computer Networks"]},
+
+    # 🔹 Supporting Courses
+    {"name": "Computer Networks", "prereq": ["Data Structures"]},
+    {"name": "Web Programming", "prereq": ["Data Structures"]},
+    {"name": "Systems Analysis and Design", "prereq": ["Data Structures"]},
+
+    # 🔹 Graduation
+    {"name": "Senior Project 1", "prereq": []},
+    {"name": "Graduation Project 2", "prereq": ["Senior Project 1"]},
+]
+
+    # ================= COURSE DIFFICULTY =================
+    COURSE_DIFFICULTY = {
+    "Intro to Computer Science": "easy",
+    "Computer Programming": "medium",
+    "Discrete Mathematics": "medium",
+    "Linear Algebra": "medium",
+    "Electronics": "medium",
+    "Physics": "medium",
+
+    "Data Structures": "hard",
+    "Logic Design": "medium",
+    "Object Oriented Programming": "medium",
+    "File Processing": "easy",
+    "Assembly Language": "hard",
+    "Statistics and Probability": "medium",
+
+    "Algorithms": "hard",
+    "Databases": "medium",
+    "Operating Systems": "hard",
+    "Computer Graphics": "medium",
+    "Software Engineering": "medium",
+    "Artificial Intelligence": "hard",
+    "Neural Networks": "hard",
+
+    "Machine Learning": "hard",
+    "Cloud Computing": "medium",
+    "Computer Security": "medium",
+    "Distributed Systems": "hard",
+    "Parallel Processing": "hard",
+    "Data Warehousing": "medium",
+    "Internet of Things": "medium",
+
+    "Computer Networks": "medium",
+    "Web Programming": "easy",
+    "Systems Analysis and Design": "medium",
+
+    "Senior Project 1": "medium",
+    "Graduation Project 2": "hard",
+}
 # ================= SMART RECOMMEND =================
     def _recommend_smart(self):
         completed = self._extract_names(self._get_previous_courses())
         gpa = self._get_gpa()
 
         available = []
-
         for course in self.COURSE_GRAPH:
-
             if course["name"] in completed:
                 continue
 
             if all(p in completed for p in course["prereq"]):
                 available.append(course["name"])
 
-        # تقليل المواد لو GPA قليل
+        # 🔥 إضافة فلترة حسب الصعوبة (من غير حذف الكود القديم)
+        filtered = []
+
+        for c in available:
+            difficulty = self.COURSE_DIFFICULTY.get(c, "medium")
+
+            if gpa:
+                if gpa < 2:
+                    if difficulty == "easy":
+                        filtered.append(c)
+
+                elif gpa < 3:
+                    if difficulty != "hard":
+                        filtered.append(c)
+
+                else:
+                    filtered.append(c)
+            else:
+                filtered.append(c)
+
+        # 🔥 نفس اللوجيك القديم (بس على filtered)
         if gpa:
             if gpa < 2:
-                return available[:2]
+                return filtered[:2]
             elif gpa < 3:
-                return available[:3]
+                return filtered[:3]
             else:
-                return available[:5]
+                return filtered[:5]
+
+        return filtered
+# ================= AVAILABLE COURSES =================
+    def _get_available_courses(self, completed):
+        available = []
+
+        for course in self.COURSE_GRAPH:
+            if course["name"] in completed:
+                continue
+
+            if all(p in completed for p in course["prereq"]):
+                available.append(course["name"])
 
         return available
+    
+# ================= FILTER BY GPA =================
+    def _filter_by_gpa(self, courses, gpa):
+
+        if not gpa:
+            return courses
+
+        if gpa >= 3.2:
+            return courses  # 🔥 كله متاح
+
+        elif gpa >= 2.5:
+            return [c for c in courses if self.COURSE_DIFFICULTY.get(c) != "hard"]
+
+        else:
+            return [c for c in courses if self.COURSE_DIFFICULTY.get(c) == "easy"]
 
 # ================= ROADMAP =================
     def _generate_roadmap(self):
