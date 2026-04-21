@@ -10,7 +10,7 @@ from openai import OpenAI
 
 
 class FAQBot:
-    def __init__(self, excel_path: str, threshold: float = 0.35):
+    def __init__(self, excel_path: str, threshold: float = 0.5):
 
         self.excel_path = excel_path
         self.threshold = threshold  
@@ -27,7 +27,6 @@ class FAQBot:
 
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-        self.cache = {}
         self.history = {}
 
         self.backend_url = "https://graduationproject48.runasp.net/api"
@@ -45,10 +44,6 @@ class FAQBot:
 
             r = requests.get(url, headers=headers)
 
-            print("URL:", url)
-            print("Status:", r.status_code)
-            print("Response:", r.text)
-
             if r.status_code == 200:
                 return r.json()
 
@@ -60,12 +55,7 @@ class FAQBot:
 
 # ================= DATA =================
     def _load_data(self):
-        ext = os.path.splitext(self.excel_path)[1].lower()
-
-        if ext == ".csv":
-            df = pd.read_csv(self.excel_path)
-        else:
-            df = pd.read_excel(self.excel_path)
+        df = pd.read_excel(self.excel_path)
 
         self.questions_en = df["question"].dropna().tolist()
         self.answers_en = df["answer"].dropna().tolist()
@@ -89,145 +79,141 @@ class FAQBot:
             return "en"
 
 # ================= BACKEND =================
-
     def _get_gpa(self):
-        url = f"{self.backend_url}/Student/gpa"
-        data = self._safe_get(url)
-
-        if data and "data" in data:
-            return data["data"].get("gpa")
-
-        return None
+        data = self._safe_get(f"{self.backend_url}/Student/gpa")
+        return data.get("data", {}).get("gpa") if data else None
 
     def _get_current_courses(self):
-        url = f"{self.backend_url}/Enrollment/current-courses"
-        data = self._safe_get(url)
-
-        if data and "data" in data:
-            return data["data"]
-
-        return []
+        data = self._safe_get(f"{self.backend_url}/Enrollment/current-courses")
+        return data.get("data", []) if data else []
 
     def _get_previous_courses(self):
-        url = f"{self.backend_url}/Enrollment/previous-courses"
-        data = self._safe_get(url)
+        data = self._safe_get(f"{self.backend_url}/Enrollment/previous-courses")
+        return data.get("data", []) if data else []
 
-        if data and "data" in data:
-            return data["data"]
+# ================= HELPERS =================
+    def _extract_names(self, courses):
+        return [
+            c.get("courseName") or c.get("name") or c.get("title") or "Unknown"
+            for c in courses
+        ]
 
-        return []
+# ================= COURSE GRAPH =================
+    COURSE_GRAPH = [
+        {"name": "Intro to Computer Science", "prereq": []},
+        {"name": "Computer Programming", "prereq": ["Intro to Computer Science"]},
+        {"name": "Discrete Mathematics", "prereq": []},
+        {"name": "Linear Algebra", "prereq": []},
+        {"name": "Electronics", "prereq": []},
+        {"name": "Physics", "prereq": []},
+
+        {"name": "Data Structures", "prereq": ["Computer Programming"]},
+        {"name": "Logic Design", "prereq": ["Electronics"]},
+
+        {"name": "Algorithms", "prereq": ["Data Structures"]},
+        {"name": "Databases", "prereq": ["Data Structures"]},
+        {"name": "Operating Systems", "prereq": ["Data Structures"]},
+        {"name": "Artificial Intelligence", "prereq": ["Algorithms"]},
+    ]
+
+# ================= SMART RECOMMEND =================
+    def _recommend_smart(self):
+        completed = self._extract_names(self._get_previous_courses())
+        gpa = self._get_gpa()
+
+        available = []
+
+        for course in self.COURSE_GRAPH:
+
+            if course["name"] in completed:
+                continue
+
+            if all(p in completed for p in course["prereq"]):
+                available.append(course["name"])
+
+        # تقليل المواد لو GPA قليل
+        if gpa:
+            if gpa < 2:
+                return available[:2]
+            elif gpa < 3:
+                return available[:3]
+            else:
+                return available[:5]
+
+        return available
+
+# ================= ROADMAP =================
+    def _generate_roadmap(self):
+        completed = self._extract_names(self._get_previous_courses())
+        roadmap = []
+        temp_done = completed.copy()
+
+        for _ in range(8):
+            term = []
+
+            for c in self.COURSE_GRAPH:
+                if c["name"] in temp_done:
+                    continue
+
+                if all(p in temp_done for p in c["prereq"]):
+                    term.append(c["name"])
+
+            if not term:
+                break
+
+            roadmap.append(term[:5])
+            temp_done.extend(term)
+
+        return roadmap
 
 # ================= AI =================
-    def _ask_ai(self, question, student_id=None):
-        try:
-            memory = self._get_memory(student_id) if student_id else ""
+    def _ask_ai(self, prompt, student_id=None):
+        memory = self._get_memory(student_id)
 
-            res = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
+        res = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
                 {
                     "role": "system",
                     "content": f"""
-You are a university assistant.
+You are a smart academic advisor.
 
-Rules:
-- Answer in the SAME language as the user (Arabic or English).
-- Keep the answer SHORT and clear.
-- Do NOT use markdown.
-- Do NOT use symbols like # or *.
-- Answer like a normal chatbot.
-- If the user asks about GPA, courses, or study, be helpful and direct.
+Use:
+- GPA
+- current courses
+- previous courses
 
-Previous conversation:
+Be smart, specific, and short.
+
+Memory:
 {memory}
 """
                 },
-                {
-                    "role": "user",
-                    "content": question
-                }
+                {"role": "user", "content": prompt}
             ],
             temperature=0.4
         )
 
-            return res.choices[0].message.content.strip()
+        return res.choices[0].message.content.strip()
 
-        except Exception as e:
-            print("AI Error:", str(e))
-            return "Something went wrong"
-        
-# ================ Genrate Title ==================
-    def generate_title(self, question):
-        try:
-            prompt = f"""
-Generate a very short title (max 5 words) for this question:
-{question}
+# ================= INTENT =================
+    def _detect_intent(self, q):
+        q = q.lower()
 
-Only return the title.
-"""
+        if "gpa" in q or "معدل" in q:
+            return "gpa"
+        if "current" in q or "باخد" in q:
+            return "current"
+        if "previous" in q or "خلصت" in q:
+            return "previous"
+        if "plan" in q or "خطة" in q:
+            return "study_plan"
+        if "recommend" in q or "اخد ايه" in q:
+            return "recommend"
+        if "roadmap" in q or "تخرج" in q:
+            return "roadmap"
 
-            res = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
-            )
-
-            return res.choices[0].message.content.strip()
-
-        except:
-            return question[:30]
-        
-# =================== Detect Intent ================
-    def _detect_intent(self, question):
-       prompt = f"""
-Classify the user question into EXACTLY ONE of these intents:
-
-gpa
-current_courses
-previous_courses
-study_plan
-faq
-unknown
-
-IMPORTANT:
-- Return ONLY one word
-- Use exactly the same spelling
-
-Examples:
-Q: what is my gpa → gpa
-Q: what subjects am I taking → current_courses
-Q: what did I finish → previous_courses
-
-Question: {question}
-"""
-
-       try:
-            res = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0
-            )
-
-            intent = res.choices[0].message.content.strip().lower()
-            return intent
-       
-       except Exception as e:
-            print("Intent Error:", e)
-            return "unknown"
-       
-# ================= HISTORY =================
-    def _save_history(self, student_id, q, a):
-        if student_id not in self.history:
-            self.history[student_id] = []
-
-        self.history[student_id].append({
-            "q": q,
-            "a": a
-        })
-
-    def _get_memory(self, student_id):
-        history = self.history.get(student_id, [])[-10:]  
-        return "\n".join([f"Q: {h['q']} A: {h['a']}" for h in history])
+        return "faq"
 
 # ================= FAQ =================
     def _faq(self, q, lang):
@@ -240,56 +226,76 @@ Question: {question}
 
         return answers[idx], sims[idx]
 
+# ================= HISTORY =================
+    def _save_history(self, sid, q, a):
+        if not sid:
+            return
+
+        self.history.setdefault(sid, []).append({"q": q, "a": a})
+
+    def _get_memory(self, sid):
+        return "\n".join(
+            [f"{h['q']} -> {h['a']}" for h in self.history.get(sid, [])[-5:]]
+        )
+
 # ================= MAIN =================
     def answer(self, question, student_id=None):
-        try:
-            intent = self._detect_intent(question)
-            intent = intent.replace(" ", "_")
-            print("Detected Intent:", intent)
 
-            answer = None  # 🔥 لازم جوه try
+        lang = self._detect_lang(question)
+        intent = self._detect_intent(question)
 
-        # ================= GPA =================
-            if intent == "gpa":
-                gpa = self._get_gpa()
-                answer = f"Your GPA is: {gpa}" if gpa else "No GPA found"
+# ===== GPA =====
+        if intent == "gpa":
+            gpa = self._get_gpa()
+            answer = f"GPA: {gpa}" if gpa else "No GPA"
 
-        # ================= CURRENT COURSES =================
-            elif intent == "current_courses":
-                data = self._get_current_courses()
-                if not data:
-                    answer = "No current courses found"
-                else:
-                    courses = [c.get("courseName", "Unknown") for c in data]
-                    answer = "Your current courses:\n" + "\n".join(courses)
+# ===== CURRENT =====
+        elif intent == "current":
+            names = self._extract_names(self._get_current_courses())
+            answer = "\n".join(names) if names else "No courses"
 
-        # ================= PREVIOUS COURSES =================
-            elif intent == "previous_courses":
-                data = self._get_previous_courses()
-                if not data:
-                    answer = "No previous courses found"
-                else:
-                    courses = [c.get("courseName", "Unknown") for c in data]
-                    answer = "Your completed courses:\n" + "\n".join(courses)
+# ===== PREVIOUS =====
+        elif intent == "previous":
+            names = self._extract_names(self._get_previous_courses())
+            answer = "\n".join(names) if names else "No previous"
 
-        # ================= Study Plan =================
-            elif intent == "study_plan":
-                gpa = self._get_gpa()
-                answer = self._ask_ai(f"My GPA is {gpa}. Give me a study plan.", student_id)
+# ===== STUDY PLAN =====
+        elif intent == "study_plan":
+            gpa = self._get_gpa()
+            current = self._extract_names(self._get_current_courses())
 
-        # ================= FAQ + AI =================
+            prompt = f"""
+Student GPA: {gpa}
+Current courses: {current}
+
+Give smart study plan.
+"""
+            answer = self._ask_ai(prompt, student_id)
+
+# ===== RECOMMEND =====
+        elif intent == "recommend":
+            rec = self._recommend_smart()
+            answer = "\n".join(rec) if rec else "No available courses"
+
+# ===== ROADMAP =====
+        elif intent == "roadmap":
+            roadmap = self._generate_roadmap()
+
+            txt = ""
+            for i, term in enumerate(roadmap, 1):
+                txt += f"Term {i}:\n" + "\n".join(term) + "\n\n"
+
+            answer = txt
+
+# ===== FAQ =====
+        else:
+            faq_answer, score = self._faq(question, lang)
+
+            if score > self.threshold:
+                answer = faq_answer
             else:
-                faq, score = self._faq(question, self._detect_lang(question))
-                if score > 0.7:
-                    answer = faq
-                else:
-                    answer = self._ask_ai(question, student_id)
+                answer = self._ask_ai(question, student_id)
 
-            # 🔥 حفظ الهستوري
-            self._save_history(student_id, question, answer)
+        self._save_history(student_id, question, answer)
 
-            return {"answer": answer}
-
-        except Exception as e:
-            print("MAIN ERROR:", str(e))
-            return {"answer": "Something went wrong"}
+        return {"answer": answer}
