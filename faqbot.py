@@ -95,6 +95,29 @@ class FAQBot:
         data = self._safe_get(f"{self.backend_url}/Enrollment/previous-courses")
         return data.get("data", []) if data else []
 
+
+# ================ generate title ===========
+    def generate_title(self, question):
+        try:
+            res = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Generate a very short title (max 5 words)"
+                    },
+                    {
+                        "role": "user",
+                        "content": question
+                    }
+                ],
+                temperature=0.3
+            )
+
+            return res.choices[0].message.content.strip()
+
+        except:
+            return question[:30]
 # ================= HELPERS =================
     def _extract_names(self, courses):
         return [
