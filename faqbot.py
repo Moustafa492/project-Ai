@@ -53,9 +53,13 @@ class FAQBot:
             print("ERROR:", e)
             return None
 
-# ================= DATA =================
     def _load_data(self):
-        df = pd.read_excel(self.excel_path)
+        ext = os.path.splitext(self.excel_path)[1].lower()
+
+        if ext == ".csv":
+            df = pd.read_csv(self.excel_path)
+        else:
+            df = pd.read_excel(self.excel_path)
 
         self.questions_en = df["question"].dropna().tolist()
         self.answers_en = df["answer"].dropna().tolist()
