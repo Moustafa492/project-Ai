@@ -38,9 +38,10 @@ class FAQBot:
 # ================= REQUEST =================
     def _safe_get(self, url):
         try:
-            headers = {
-                "Authorization": f"Bearer {self.token}"
-            }
+            headers = {}
+
+            if self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
 
             r = requests.get(url, headers=headers)
 
@@ -85,7 +86,19 @@ class FAQBot:
 # ================= BACKEND =================
     def _get_gpa(self):
         data = self._safe_get(f"{self.backend_url}/Student/gpa")
-        return data.get("data", {}).get("gpa") if data else None
+
+        if not data:
+            return None
+
+        # لو dict
+        if isinstance(data, dict):
+            return data.get("data", {}).get("gpa")
+
+        # لو list
+        if isinstance(data, list) and len(data) > 0:
+            return data[0].get("gpa")
+
+        return None
 
     def _get_current_courses(self):
         data = self._safe_get(f"{self.backend_url}/Enrollment/current-courses")
