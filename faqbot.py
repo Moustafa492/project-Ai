@@ -87,13 +87,17 @@ class FAQBot:
     def _get_gpa(self):
         data = self._safe_get(f"{self.backend_url}/Student/gpa")
 
-        print("DEBUG GPA DATA:", data)  # 👈 مهم
+        print("DEBUG GPA DATA:", data)
 
         if not data:
             return None
 
         # لو dict
         if isinstance(data, dict):
+            # 👇 يدعم الشكلين
+            if "cumulativeGpa" in data:
+                return data.get("cumulativeGpa")
+
             return data.get("data", {}).get("gpa")
 
         # لو list
@@ -101,6 +105,11 @@ class FAQBot:
             if len(data) > 0:
                 first = data[0]
                 if isinstance(first, dict):
+
+                    # 👇 يدعم cumulativeGpa
+                    if "cumulativeGpa" in first:
+                        return first.get("cumulativeGpa")
+
                     return first.get("gpa")
 
         return None
@@ -138,7 +147,16 @@ class FAQBot:
             {"courseName": "Intro to Computer Science"},
             {"courseName": "Computer Programming"}
         ]
+    def _format_gpa(self, gpa):
+        if gpa is None:
+            return "No GPA"
 
+        if gpa < 2:
+            return f"Your GPA is {gpa} ⚠️ حاول تقلل المواد وتركز"
+        elif gpa < 3:
+            return f"Your GPA is {gpa} 👍 كويس"
+        else:
+            return f"Your GPA is {gpa} 🔥 ممتاز"
 
 # ================= SMART AI TITLE =================
     def generate_title(self, question):
@@ -473,7 +491,7 @@ Memory:
 # ===== GPA =====
         if intent == "gpa":
             gpa = self._get_gpa()
-            answer = f"GPA: {gpa}" if gpa else "No GPA"
+            answer = self._format_gpa(gpa)
 
 # ===== CURRENT =====
         elif intent == "current":
