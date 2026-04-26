@@ -370,69 +370,40 @@ Rules:
     
 # ================= EXPLAIN COURSE =================
     def _explain_course(self, course_name, lang="en"):
-        if lang == "ar":
-            prompt = f"""
-اشرح المادة دي لطالب في كمبيوتر ساينس:
-
-{course_name}
-
-- يعني ايه المادة
-- بتاخد فيها ايه
-- صعوبتها
-- نصايح
-
-اختصر وخليها واضحة
-"""
-        else:
-            prompt = f"""
-Explain this course for a CS student:
-
-{course_name}
-
-- What is it about
-- What you study
-- Difficulty
-- Tips
-
-Keep it short and clear
-"""
-
-        return self._ask_ai(prompt)
-
-
-# ================= SMART PLAN =================
-    def _smart_plan(self, lang="en"):
-
-        gpa = self._get_gpa()
-        current = self._extract_names(self._get_current_courses())
-        previous = self._extract_names(self._get_previous_courses())
 
         if lang == "ar":
-            prompt = f"""
-معدل الطالب: {gpa}
-المواد الحالية: {current}
-المواد اللي خلصها: {previous}
+            return f"""📘 {course_name}
 
-اعمل خطة مذاكرة ذكية:
-- عدد مواد مناسب
-- ترتيب المواد
-- نصايح
+🔹 الوصف:
+المادة دي بتشرح أساسيات مهمة في المجال
 
-خليها بسيطة
+🔹 هتتعلم:
+- مفاهيم أساسية
+- تطبيق عملي
+
+🔹 الصعوبة:
+متوسطة إلى صعبة
+
+🔹 نصايح:
+ذاكر تدريجي وطبق كتير
 """
         else:
-            prompt = f"""
-Student GPA: {gpa}
-Current: {current}
-Completed: {previous}
+            return f"""📘 {course_name}
 
-Give a smart study plan:
-- suitable load
-- course order
-- tips
+🔹 Description:
+This course covers core concepts
+
+🔹 You will learn:
+- Key fundamentals
+- Practical skills
+
+🔹 Difficulty:
+Medium to Hard
+
+🔹 Tips:
+Practice consistently
 """
-
-        return self._ask_ai(prompt)
+    
 # ================= AVAILABLE COURSES =================
     def _get_available_courses(self, completed):
         available = []
@@ -486,8 +457,10 @@ Give a smart study plan:
         return roadmap
 
 # ================= AI =================
-    def _ask_ai(self, prompt, student_id=None):
+    def _ask_ai(self, prompt, student_id=None,lang="en"):
         memory = self._get_memory(student_id)
+
+        language_text = "Arabic" if lang == "ar" else "English" 
 
         res = self.client.chat.completions.create(
             model="gpt-4o-mini",
@@ -498,22 +471,18 @@ Give a smart study plan:
 You are a smart academic advisor.
 
 IMPORTANT:
-- Answer in the SAME language as the user question.
-- If Arabic → answer Arabic
-- If English → answer English
+- ALWAYS answer in {language_text}
+- Be clean and structured
+- Use bullet points when possible
 
 Use:
 - GPA
 - current courses
 - previous courses
 
-Be smart, specific, and short.
-
 Memory:
 {memory}
 
-User Question: {prompt}
-Language: {"Arabic" if any(ord(c) > 128 for c in prompt) else "English"}
 """
                 },
                 {"role": "user", "content": prompt}
@@ -522,6 +491,39 @@ Language: {"Arabic" if any(ord(c) > 128 for c in prompt) else "English"}
         )
 
         return res.choices[0].message.content.strip()
+# ================= SMART PLAN =================
+    def _smart_plan(self, lang="en"):
+
+        gpa = self._get_gpa()
+        current = self._extract_names(self._get_current_courses())
+        previous = self._extract_names(self._get_previous_courses())
+
+        if lang == "ar":
+            prompt = f"""
+معدل الطالب: {gpa}
+المواد الحالية: {current}
+المواد اللي خلصها: {previous}
+
+اعمل خطة مذاكرة ذكية:
+- عدد مواد مناسب
+- ترتيب المواد
+- نصايح
+
+خليها بسيطة
+"""
+        else:
+            prompt = f"""
+Student GPA: {gpa}
+Current: {current}
+Completed: {previous}
+
+Give a smart study plan:
+- suitable load
+- course order
+- tips
+"""
+
+        return self._ask_ai(prompt, student_id, lang)
 
 # ================= INTENT =================
     def _detect_intent(self, question):
@@ -616,16 +618,16 @@ Give smart study plan.
             courses = self._recommend_smart()
 
             if not courses:
-                answer = "No available courses"
+                answer = "No available courses" if lang == "en" else "لا يوجد مواد"
             else:
                 if lang == "ar":
                     answer = "📚 مواد مقترحة:\n\n"
                     for c in courses:
-                        answer += f"🔹 {c}\n"
+                        answer += f"- {c}\n"
                 else:
                     answer = "📚 Recommended Courses:\n\n"
                     for c in courses:
-                        answer += f"🔹 {c}\n"
+                        answer += f"- {c}\n"
 
 # ===== ROADMAP =====
         elif intent == "roadmap":
@@ -636,17 +638,17 @@ Give smart study plan.
             if lang == "ar":
                 formatted = "🧭 الخطة الدراسية:\n\n"
                 for i, term in enumerate(plan, 1):
-                    formatted += f"📌 ترم {i}:\n"
+                    formatted += f"📚 ترم {i}:\n"
                     for c in term:
-                        formatted += f"   🔹 {c}\n"
+                        formatted += f"- {c}\n"
                     formatted += "\n"
             else:
                 formatted = "🧭 Study Plan:\n\n"
                 for i, term in enumerate(plan, 1):
-                    formatted += f"📌 Term {i}:\n"
+                    formatted += f"📚 Term {i}:\n"
                     for c in term:
-                        formatted += f"   🔹 {c}\n"
-                    formatted += "\n"
+                        formatted += f"- {c}\n"
+                formatted += "\n"
 
             answer = formatted
 # ===== EXPLAIN =====
