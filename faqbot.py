@@ -147,16 +147,25 @@ class FAQBot:
             {"courseName": "Intro to Computer Science"},
             {"courseName": "Computer Programming"}
         ]
-    def _format_gpa(self, gpa):
-        if gpa is None:
-            return "No GPA"
+    def _format_gpa(self, gpa, lang="en"):
 
-        if gpa < 2:
-            return f"Your GPA is {gpa} ⚠️ حاول تقلل المواد وتركز"
-        elif gpa < 3:
-            return f"Your GPA is {gpa} 👍 كويس"
+        if gpa is None:
+            return "No GPA" if lang == "en" else "لا يوجد معدل"
+
+        if lang == "ar":
+            if gpa < 2:
+                return f"معدلك {gpa} ⚠️ حاول تقلل المواد وتركز"
+            elif gpa < 3:
+                return f"معدلك {gpa} 👍 كويس"
+            else:
+                return f"معدلك {gpa} 🔥 ممتاز"
         else:
-            return f"Your GPA is {gpa} 🔥 ممتاز"
+            if gpa < 2:
+                return f"Your GPA is {gpa} ⚠️ Try to reduce load"
+            elif gpa < 3:
+                return f"Your GPA is {gpa} 👍 Good"
+            else:
+                return f"Your GPA is {gpa} 🔥 Excellent"
 
 # ================= SMART AI TITLE =================
     def generate_title(self, question):
@@ -358,6 +367,72 @@ Rules:
                 return filtered[:5]
 
         return filtered
+    
+# ================= EXPLAIN COURSE =================
+    def _explain_course(self, course_name, lang="en"):
+        if lang == "ar":
+            prompt = f"""
+اشرح المادة دي لطالب في كمبيوتر ساينس:
+
+{course_name}
+
+- يعني ايه المادة
+- بتاخد فيها ايه
+- صعوبتها
+- نصايح
+
+اختصر وخليها واضحة
+"""
+        else:
+            prompt = f"""
+Explain this course for a CS student:
+
+{course_name}
+
+- What is it about
+- What you study
+- Difficulty
+- Tips
+
+Keep it short and clear
+"""
+
+        return self._ask_ai(prompt)
+
+
+# ================= SMART PLAN =================
+    def _smart_plan(self, lang="en"):
+
+        gpa = self._get_gpa()
+        current = self._extract_names(self._get_current_courses())
+        previous = self._extract_names(self._get_previous_courses())
+
+        if lang == "ar":
+            prompt = f"""
+معدل الطالب: {gpa}
+المواد الحالية: {current}
+المواد اللي خلصها: {previous}
+
+اعمل خطة مذاكرة ذكية:
+- عدد مواد مناسب
+- ترتيب المواد
+- نصايح
+
+خليها بسيطة
+"""
+        else:
+            prompt = f"""
+Student GPA: {gpa}
+Current: {current}
+Completed: {previous}
+
+Give a smart study plan:
+- suitable load
+- course order
+- tips
+"""
+
+        return self._ask_ai(prompt)
 # ================= AVAILABLE COURSES =================
     def _get_available_courses(self, completed):
         available = []
@@ -422,6 +497,11 @@ Rules:
                     "content": f"""
 You are a smart academic advisor.
 
+IMPORTANT:
+- Answer in the SAME language as the user question.
+- If Arabic → answer Arabic
+- If English → answer English
+
 Use:
 - GPA
 - current courses
@@ -431,6 +511,9 @@ Be smart, specific, and short.
 
 Memory:
 {memory}
+
+User Question: {prompt}
+Language: {"Arabic" if any(ord(c) > 128 for c in prompt) else "English"}
 """
                 },
                 {"role": "user", "content": prompt}
@@ -452,7 +535,7 @@ Memory:
         if "roadmap" in q or "plan" in q or "خطة" in q:
             return "roadmap"
 
-        # 👇 ده التعديل المهم
+        # 👇 important
         if (
             "suggest" in q
             or "course" in q
@@ -461,6 +544,13 @@ Memory:
             or "أدرس ايه" in q
         ):
             return "recommend"
+        # explain
+        if "شرح" in q or "explain" in q:
+            return "explain"
+
+        # smart plan
+        if "smart plan" in q or "خطة ذكية" in q:
+            return "smart_plan"
 
         return "faq"
 
@@ -496,7 +586,7 @@ Memory:
 # ===== GPA =====
         if intent == "gpa":
             gpa = self._get_gpa()
-            answer = self._format_gpa(gpa)
+            answer = self._format_gpa(gpa,lang)
 
 # ===== CURRENT =====
         elif intent == "current":
@@ -528,21 +618,60 @@ Give smart study plan.
             if not courses:
                 answer = "No available courses"
             else:
-                answer = "📚 Recommended Courses:\n"
-                for c in courses:
-                    answer += f"- {c}\n"
+                if lang == "ar":
+                    answer = "📚 مواد مقترحة:\n\n"
+                    for c in courses:
+                        answer += f"🔹 {c}\n"
+                else:
+                    answer = "📚 Recommended Courses:\n\n"
+                    for c in courses:
+                        answer += f"🔹 {c}\n"
 
 # ===== ROADMAP =====
         elif intent == "roadmap":
             plan = self._generate_roadmap()
 
             formatted = ""
-            for i, term in enumerate(plan, 1):
-                formatted += f"\n📚 Term {i}:\n"
-                for c in term:
-                    formatted += f"- {c}\n"
+
+            if lang == "ar":
+                formatted = "🧭 الخطة الدراسية:\n\n"
+                for i, term in enumerate(plan, 1):
+                    formatted += f"📌 ترم {i}:\n"
+                    for c in term:
+                        formatted += f"   🔹 {c}\n"
+                    formatted += "\n"
+            else:
+                formatted = "🧭 Study Plan:\n\n"
+                for i, term in enumerate(plan, 1):
+                    formatted += f"📌 Term {i}:\n"
+                    for c in term:
+                        formatted += f"   🔹 {c}\n"
+                    formatted += "\n"
 
             answer = formatted
+# ===== EXPLAIN =====
+        elif intent == "explain":
+            course_name = question.replace("اشرح", "").replace("explain", "").strip()
+
+            if course_name:
+                answer = self._explain_course(course_name, lang)
+            else:
+                courses = self._recommend_smart()
+
+                if not courses:
+                    answer = "No courses" if lang == "en" else "لا يوجد مواد"
+                else:
+                    explanations = []
+                    for c in courses[:2]:
+                        exp = self._explain_course(c, lang)
+                        explanations.append(f"📘 {c}:\n{exp}")
+
+                    answer = "\n\n".join(explanations)
+
+
+# ===== SMART PLAN =====
+        elif intent == "smart_plan":
+            answer = self._smart_plan(lang)
 
 # ===== FAQ =====
         else:
