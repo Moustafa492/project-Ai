@@ -441,21 +441,26 @@ Memory:
         return res.choices[0].message.content.strip()
 
 # ================= INTENT =================
-    def _detect_intent(self, q):
-        q = q.lower()
+    def _detect_intent(self, question):
+        q = question.lower()
 
+        # GPA
         if "gpa" in q or "معدل" in q:
             return "gpa"
-        if "current" in q or "باخد" in q:
-            return "current"
-        if "previous" in q or "خلصت" in q:
-            return "previous"
-        if "plan" in q or "خطة" in q:
-            return "study_plan"
-        if "recommend" in q or "اخد ايه" in q:
-            return "recommend"
-        if "roadmap" in q or "تخرج" in q:
+
+        # Roadmap
+        if "roadmap" in q or "plan" in q or "خطة" in q:
             return "roadmap"
+
+        # 👇 ده التعديل المهم
+        if (
+            "suggest" in q
+            or "course" in q
+            or "study next" in q
+            or "اخد ايه" in q
+            or "أدرس ايه" in q
+        ):
+            return "recommend"
 
         return "faq"
 
@@ -518,18 +523,26 @@ Give smart study plan.
 
 # ===== RECOMMEND =====
         elif intent == "recommend":
-            rec = self._recommend_smart()
-            answer = "\n".join(rec) if rec else "No available courses"
+            courses = self._recommend_smart()
+
+            if not courses:
+                answer = "No available courses"
+            else:
+                answer = "📚 Recommended Courses:\n"
+                for c in courses:
+                    answer += f"- {c}\n"
 
 # ===== ROADMAP =====
         elif intent == "roadmap":
-            roadmap = self._generate_roadmap()
+            plan = self._generate_roadmap()
 
-            txt = ""
-            for i, term in enumerate(roadmap, 1):
-                txt += f"Term {i}:\n" + "\n".join(term) + "\n\n"
+            formatted = ""
+            for i, term in enumerate(plan, 1):
+                formatted += f"\n📚 Term {i}:\n"
+                for c in term:
+                    formatted += f"- {c}\n"
 
-            answer = txt
+            answer = formatted
 
 # ===== FAQ =====
         else:
