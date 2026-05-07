@@ -78,7 +78,18 @@ class FAQBot:
 
 # ================= LANG =================
     def _detect_lang(self, text):
-        return "ar" if any('\u0600' <= c <= '\u06FF' for c in text) else "en"
+
+        arabic_count = sum(
+            1 for c in text
+            if '\u0600' <= c <= '\u06FF'
+        )
+
+        english_count = sum(
+            1 for c in text
+            if c.isalpha() and ord(c) < 128
+        )
+
+        return "ar" if arabic_count > english_count else "en"
 
 # ================= BACKEND =================
     def _get_gpa(self):
@@ -236,12 +247,27 @@ Rules:
                 name = str(c)
 
             # 🔥 normalize
-            name = name.strip().lower()
+            name = name.strip()
 
             names.append(name)
 
         return names
 
+# ================= STUDENT YEAR =================
+    def _detect_student_year(self, completed):
+
+        count = len(completed)
+
+        if count < 6:
+            return "First Year"
+
+        elif count < 12:
+            return "Second Year"
+
+        elif count < 18:
+            return "Third Year"
+
+        return "Fourth Year"
 # ================= COURSE GRAPH =================
     COURSE_GRAPH = [
     # 🔹 First Year
@@ -329,70 +355,104 @@ Rules:
 }
 # ================= SMART RECOMMEND =================
     def _recommend_smart(self):
-        completed = self._extract_names(self._get_previous_courses())
-        gpa = self._get_gpa()
 
-        completed = [c.lower() for c in completed]
+        completed = self._extract_names(
+            self._get_previous_courses()
+        )
+
+        gpa = self._get_gpa()
 
         available = []
 
         for course in self.COURSE_GRAPH:
+
             name = course["name"]
 
-            if name.lower() in completed:
+            if name in completed:
                 continue
 
-            if all(p.lower() in completed for p in course["prereq"]):
+            if all(p in completed for p in course["prereq"]):
                 available.append(name)
 
-        # فلترة حسب GPA
-        if gpa:
-            if gpa < 2:
-                return available[:2]
-            elif gpa < 3:
-                return available[:3]
-            else:
-                return available[:5]
+        available = self._filter_by_gpa(available, gpa)
 
-        return available
+        year = self._detect_student_year(completed)
+
+        if year == "First Year":
+            return available[:3]
+
+        elif year == "Second Year":
+            return available[:4]
+
+        return available[:5]
     
 # ================= EXPLAIN COURSE =================
     def _explain_course(self, course_name, lang="en"):
 
-        course_name = course_name.strip().title()
+        prompt = f"""
+Explain the course '{course_name}' deeply for a computer science student.
+
+Explain it like ChatGPT tutor.
+Respond ONLY in the requested language.
+Include:
+- What the course is about
+- Main topics
+- Examples
+- Difficulty
+- Study tips
+
+Language:
+{"Arabic" if lang == "ar" else "English"}
+"""
+
+        return self._ask_ai(prompt, lang=lang)
+    
+# ================= SMART PLAN =================
+    def _smart_plan(self, lang="en", student_id=None):
+
+        gpa = self._get_gpa()
+
+        current = self._extract_names(
+            self._get_current_courses()
+        )
+
+        completed = self._extract_names(
+            self._get_previous_courses()
+        )
 
         if lang == "ar":
-            return f"""📘 {course_name}
 
-🔹 الوصف:
-المادة دي بتشرح أساسيات مهمة في المجال
+            prompt = f"""
+الطالب معدله {gpa}
 
-🔹 هتتعلم:
-- مفاهيم أساسية
-- تطبيق عملي
+المواد الحالية:
+{current}
 
-🔹 الصعوبة:
-متوسطة
+المواد اللي خلصها:
+{completed}
 
-🔹 نصايح:
-ذاكر تدريجي وطبق كتير
+اعمل خطة مذاكرة ذكية ومناسبة لمستواه.
 """
+
         else:
-            return f"""📘 {course_name}
 
-🔹 Description:
-Core concepts of the subject
+            prompt = f"""
+Student GPA: {gpa}
 
-🔹 You will learn:
-- Fundamentals
-- Practical skills
+Current courses:
+{current}
 
-🔹 Difficulty:
-Medium
+Completed courses:
+{completed}
 
-🔹 Tips:
-Practice consistently
+Create smart study plan.
 """
+
+        return self._ask_ai(
+            prompt,
+            student_id,
+            lang
+        )
     
 # ================= AVAILABLE COURSES =================
     def _get_available_courses(self, completed):
@@ -420,7 +480,9 @@ Practice consistently
             return [c for c in courses if self.COURSE_DIFFICULTY.get(c) != "hard"]
 
         else:
-            return [c for c in courses if self.COURSE_DIFFICULTY.get(c) == "easy"]
+            easy_courses = [c for c in courses if self.COURSE_DIFFICULTY.get(c) == "easy"]
+
+            return easy_courses if easy_courses else courses[:2]
 
 # ================= ROADMAP =================
     def _generate_roadmap(self):
@@ -432,16 +494,20 @@ Practice consistently
         roadmap = []
         temp_done = completed.copy()
 
-        for _ in range(8):
+        for _ in range(4):
             term = []
+            year = self._detect_student_year(temp_done)
 
             for course in self.COURSE_GRAPH:
                 name = course["name"]
 
-                if name.lower() in temp_done:
+                if name in temp_done:
                     continue
 
-                if all(p.lower() in temp_done for p in course["prereq"]):
+                if "project" in name.lower() and year != "Fourth Year":
+                    continue
+
+                if all(p in temp_done for p in course["prereq"]):
                     term.append(name)
 
             if not term:
@@ -455,8 +521,21 @@ Practice consistently
         return roadmap
 
 # ================= AI =================
-    def _ask_ai(self, prompt, student_id=None,lang="en"):
+    def _ask_ai(self, prompt, student_id=None, lang="en"):
+
         memory = self._get_memory(student_id)
+
+        gpa = self._get_gpa()
+
+        completed = self._extract_names(
+            self._get_previous_courses()
+        )
+
+        current = self._extract_names(
+            self._get_current_courses()
+        )
+
+        year = self._detect_student_year(completed)
 
         res = self.client.chat.completions.create(
             model="gpt-4o-mini",
@@ -464,89 +543,79 @@ Practice consistently
                 {
                     "role": "system",
                     "content": f"""
-You are a smart academic advisor.
-
-ALWAYS answer in {"Arabic" if lang == "ar" else "English"}
-DO NOT mix languages.
+You are a professional academic advisor like ChatGPT.
 
 Rules:
-- Short answer (max 5 lines)
-- No markdown (** or ###)
-- Use bullet points "-"
-- Be clear and simple
+- Understand full conversation
+- Connect previous messages
+- Give personalized advice
+- Be natural and human
+- No markdown symbols
+- Keep answers under 8 lines
+- Use short paragraphs  
+- Keep answers readable
+- Avoid repeating yourself
+- Be concise and smart
+- Answer ONLY in {"Arabic" if lang == "ar" else "English"}
 
-Memory:
+Student Information:
+- GPA: {gpa}
+- Academic Year: {year}
+- Completed Courses: {completed}
+- Current Courses: {current}
+
+Conversation History:
 {memory}
 """
                 },
-                {"role": "user", "content": prompt}
+                {
+                    "role": "user",
+                    "content": prompt
+                }
             ],
-            temperature=0.4
+            temperature=0.6
         )
 
-        return res.choices[0].message.content.strip()
-# ================= SMART PLAN =================
-    def _smart_plan(self, lang="en",student_id=None):
+        response = res.choices[0].message.content.strip()
 
-        gpa = self._get_gpa()
-        current = self._extract_names(self._get_current_courses())
-        previous = self._extract_names(self._get_previous_courses())
+        if "?" not in response:
 
-        if lang == "ar":
-            prompt = f"""
-معدل الطالب: {gpa}
-المواد الحالية: {current}
-المواد اللي خلصها: {previous}
+            if lang == "ar":
+                response += "\n\nتحب أساعدك أكتر؟"
 
-اعمل خطة مذاكرة ذكية:
-- عدد مواد مناسب
-- ترتيب المواد
-- نصايح
+            else:
+                response += "\n\nDo you want more help?"
 
-خليها بسيطة
-"""
-        else:
-            prompt = f"""
-Student GPA: {gpa}
-Current: {current}
-Completed: {previous}
-
-Give a smart study plan:
-- suitable load
-- course order
-- tips
-"""
-
-        return self._ask_ai(prompt, student_id, lang)
+        return response
 
 # ================= INTENT =================
     def _detect_intent(self, question):
+
         q = question.lower()
 
-        # GPA
         if "gpa" in q or "معدل" in q:
             return "gpa"
 
-        # smart plan
         if "smart plan" in q or "خطة ذكية" in q:
             return "smart_plan"
-        
-        # Roadmap
-        if "roadmap" in q or "plan" in q or "خطة" in q:
+
+        if "اشرح" in q or "شرح" in q or "explain" in q or "عرفني" in q:
+            return "explain"
+
+        if "تايه" in q or "مش فاهم" in q or "lost" in q:
+            return "confused"
+
+        if "roadmap" in q or "خطة تخرج" in q:
             return "roadmap"
 
-        # 👇 important
         if (
             "suggest" in q
-            or "course" in q
-            or "study next" in q
             or "اخد ايه" in q
-            or "أدرس ايه" in q
+            or "study next" in q
+            or "recommend" in q
+            or "رشح" in q
         ):
             return "recommend"
-        # explain
-        if "شرح" in q or "explain" in q:
-            return "explain"
 
         return "faq"
 
@@ -555,49 +624,126 @@ Give a smart study plan:
         vec = self.vectorizer_ar if lang == "ar" else self.vectorizer_en
         mat = self.matrix_ar if lang == "ar" else self.matrix_en
         answers = self.answers_ar if lang == "ar" else self.answers_en
-
+        
+        if mat.shape[0] == 0:
+            return None, 0
+        
+        q = q.strip().lower()
         sims = cosine_similarity(vec.transform([q]), mat)[0]
         idx = np.argmax(sims)
-
         return answers[idx], sims[idx]
 
 # ================= HISTORY =================
     def _save_history(self, sid, q, a):
+
         if not sid:
             return
 
-        self.history.setdefault(sid, []).append({"q": q, "a": a})
+        self.history.setdefault(sid, [])
 
+        self.history[sid].append({
+            "q": q,
+            "a": a
+        })
+
+        self.history[sid] = self.history[sid][-20:]
+
+# ================= MEMORY =================
     def _get_memory(self, sid):
-        return "\n".join(
-            [f"{h['q']} -> {h['a']}" for h in self.history.get(sid, [])[-5:]]
-        )
+ 
+        history = self.history.get(sid, [])[-10:]
+
+        memory = ""
+
+        for h in history:
+            memory += f"User: {h['q']}\nBot: {h['a']}\n"
+
+        return memory
 
 # ================= MAIN =================
     def answer(self, question, student_id=None):
-
+ 
         lang = self._detect_lang(question)
+
+        original_question = question
+
+        # ================= FAQ FIRST =================
         intent = self._detect_intent(question)
 
-# ===== GPA =====
+        faq_answer, score = self._faq(question, lang)
+
+        # FAQ فقط لو intent faq
+        if intent == "faq" and faq_answer and score > 0.7:
+
+            self._save_history(
+                student_id,
+                question,
+                faq_answer
+            )
+
+            return {
+                "answer": faq_answer
+            }
+
+        # ================= MEMORY =================
+        memory = self._get_memory(student_id)
+
+        if memory:
+
+            question = f"""
+                Conversation:
+                {memory}
+
+                Current Question:
+                {question}
+            """
+
+        # ================= INTENT =================
+
+        # ===== GPA =====
         if intent == "gpa":
-            gpa = self._get_gpa()
-            answer = self._format_gpa(gpa,lang)
 
-# ===== CURRENT =====
+            gpa = self._get_gpa()
+
+            answer = self._format_gpa(
+                gpa,
+                lang
+            )
+
+        # ===== CURRENT =====
         elif intent == "current":
-            names = self._extract_names(self._get_current_courses())
-            answer = "\n".join(names) if names else "No courses"
 
-# ===== PREVIOUS =====
+            names = self._extract_names(
+                self._get_current_courses()
+            )
+
+            answer = (
+                "\n".join(names)
+                if names
+                else "No courses"
+            )
+
+        # ===== PREVIOUS =====
         elif intent == "previous":
-            names = self._extract_names(self._get_previous_courses())
-            answer = "\n".join(names) if names else "No previous"
 
-# ===== STUDY PLAN =====
+            names = self._extract_names(
+                self._get_previous_courses()
+            )
+
+            answer = (
+                "\n".join(names)
+                if names
+                else "No previous"
+            )
+
+        # ===== STUDY PLAN =====
         elif intent == "study_plan":
+
             gpa = self._get_gpa()
-            current = self._extract_names(self._get_current_courses())
+
+            current = self._extract_names(
+                self._get_current_courses()
+            )
 
             prompt = f"""
 Student GPA: {gpa}
@@ -605,68 +751,127 @@ Current courses: {current}
 
 Give smart study plan.
 """
-            answer = self._ask_ai(prompt, student_id,lang)
 
-# ===== RECOMMEND =====
+            answer = self._ask_ai(
+                prompt,
+                student_id,
+                lang
+            )
+
+        # ===== RECOMMEND =====
         elif intent == "recommend":
+
             courses = self._recommend_smart()
 
             if not courses:
-                answer = "لا يوجد مواد متاحة" if lang == "ar" else "No courses available"
-            else:
-                if lang == "ar":
-                    answer = "📚 المواد المقترحة:\n"
-                    for c in courses:
-                        answer += f"• {c}\n"
-                else:
-                    answer = "📚 Recommended Courses:\n"
-                    for c in courses:
-                        answer += f"• {c}\n"
 
-# ===== ROADMAP =====
+                answer = (
+                    "يبدو أنك أنهيت معظم المواد 🎉"
+                    if lang == "ar"
+                    else "You seem to have completed most courses 🎉"
+                )
+
+            else:
+
+                if lang == "ar":
+
+                    answer = "📚 المواد المقترحة:\n"
+
+                else:
+
+                    answer = "📚 Recommended Courses:\n"
+
+                for c in courses:
+                    answer += f"• {c}\n"
+
+        # ===== ROADMAP =====
         elif intent == "roadmap":
+
             plan = self._generate_roadmap()
 
             if lang == "ar":
-                answer = "🧭 الخطة الدراسية:\n\n"
-                for i, term in enumerate(plan, 1):
-                    answer += f"📚 ترم {i}:\n"
-                    for c in term:
-                        answer += f"• {c}\n"
-                    answer += "\n"
-            else:
-                answer = "🧭 Study Plan:\n\n"
-                for i, term in enumerate(plan, 1):
-                    answer += f"📚 Term {i}:\n"
-                    for c in term:
-                        answer += f"• {c}\n"
-                    answer += "\n"
 
-# ===== EXPLAIN =====
+                answer = "🧭 الخطة الدراسية:\n\n"
+
+                for i, term in enumerate(plan, 1):
+
+                    answer += (
+                        f"📚 ترم {i}: "
+                        f"{' - '.join(term)}\n"
+                    )
+
+            else:
+
+                answer = "🧭 Study Roadmap:\n\n"
+
+                for i, term in enumerate(plan, 1):
+
+                    answer += (
+                        f"📚 Term {i}: "
+                        f"{' - '.join(term)}\n"
+                    )
+
+        # ===== EXPLAIN =====
         elif intent == "explain":
+
             course_name = (
-                question.lower()
+                original_question
                 .replace("اشرح", "")
+                .replace("شرح", "")
                 .replace("explain", "")
                 .strip()
             )
 
-            answer = self._explain_course(course_name, lang)
+            answer = self._explain_course(
+                course_name,
+                lang
+            )
 
-
-# ===== SMART PLAN =====
+        # ===== SMART PLAN =====
         elif intent == "smart_plan":
-            answer = self._smart_plan(lang,student_id)
 
-# ===== FAQ =====
-        else:
-            faq_answer, score = self._faq(question, lang)
+            answer = self._smart_plan(
+                lang,
+                student_id
+            )
 
-            if score > self.threshold:
-                answer = faq_answer
+        # ===== CONFUSED =====
+        elif intent == "confused":
+
+            if lang == "ar":
+
+                prompt = (
+                    "الطالب تايه ومحتاج تنظيم مذاكرة ودعم"
+                )
+
             else:
-                answer = self._ask_ai(question, student_id)
 
-        self._save_history(student_id, question, answer)
+                prompt = (
+                    "Student feels lost and needs guidance"
+                )
 
-        return {"answer": answer}
+            answer = self._ask_ai(
+                prompt,
+                student_id,
+                lang
+            )
+
+        # ===== AI =====
+        else:
+
+            answer = self._ask_ai(
+                question,
+                student_id,
+                lang
+            )
+
+        # ================= SAVE =================
+        self._save_history(
+            student_id,
+            original_question,
+            answer
+        )
+
+        return {
+            "answer": answer
+        }
